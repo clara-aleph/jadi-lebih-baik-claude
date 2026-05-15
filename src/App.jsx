@@ -1,20 +1,30 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
-const STORAGE_KEY = "jadi_lebih_baik_submissions";
+import { supabase } from './supabase'
 
-function getSubmissions() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+async function getSubmissions() {
+  const { data, error } = await supabase
+    .from('submissions')
+    .select('*')
+    .order('timestamp', { ascending: false })
+    .limit(50)
+  if (error) { console.error(error); return []; }
+  return data || [];
 }
 
-function saveSubmission(entry) {
-  try {
-    const existing = getSubmissions();
-    existing.unshift(entry);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing.slice(0, 50)));
-  } catch { }
+async function saveSubmission(entry) {
+  const { error } = await supabase
+    .from('submissions')
+    .insert([{
+      id: entry.id,
+      before_image: entry.beforeImage,
+      after_image: entry.afterImage,
+      ai_desc: entry.aiDesc,
+      location: entry.location,
+      improvements: JSON.stringify(entry.improvements || []),
+      timestamp: entry.timestamp,
+    }])
+  if (error) console.error('Save error:', error);
 }
 
 function generateId() {
@@ -418,7 +428,11 @@ export default function JadiLebihBaik() {
   const [error, setError] = useState("");
   const [drag, setDrag] = useState(false);
   const [toast, setToast] = useState("");
-  const [submissions, setSubmissions] = useState(getSubmissions);
+  const [submissions, setSubmissions] = useState([]);
+
+  useEffect(() => {
+    getSubmissions().then(setSubmissions);
+  }, []);
   const [modalEntry, setModalEntry] = useState(null);
   const fileRef = useRef();
 
@@ -523,8 +537,9 @@ IMPORTANT: Respond ONLY in this exact JSON format (no markdown, no backticks):
         location: desc || "Lokasi tanpa nama",
         timestamp: Date.now(),
       };
-      saveSubmission(entry);
-      setSubmissions(getSubmissions());
+      await saveSubmission(entry);
+      const updated = await getSubmissions();
+      setSubmissions(updated);
       setResult(entry);
     } catch (err) {
       setError("Gagal memproses gambar. Coba lagi ya! (" + err.message + ")");
